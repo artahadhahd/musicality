@@ -1,16 +1,6 @@
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
-// pub enum Note {
-//     A,
-//     B,
-//     C,
-//     D,
-//     E,
-//     F,
-//     G,
-// }
-
 pub enum Modifier {
     Sharp,
     Flat,
@@ -120,7 +110,7 @@ impl<'a> Parser<'a> {
         Ok(MusicalValues::String(string))
     }
 
-    fn parse_uint<'b>(&mut self) -> usize {
+    fn parse_uint(&mut self) -> usize {
         self.skip_whitespace();
         let mut int = "".to_string();
         while self.has_next() {
