@@ -1,5 +1,3 @@
-
-
 use std::{error::Error, fmt};
 
 #[derive(Debug, PartialEq)]
@@ -8,6 +6,7 @@ pub enum ParseError {
     EOL(usize),
     Ident(usize),
     Unexpected(usize),
+    NotPossible,
     Done,
 }
 
@@ -22,6 +21,7 @@ impl fmt::Display for ParseError {
             E::Ident(l) => write!(f, "Line {l}: Expected an identifier"),
             E::Unexpected(l) => write!(f, "Line {l}: Unexpected character(s)"),
             E::Done => write!(f, ""),
+            E::NotPossible => unreachable!(),
         }
     }
 }
@@ -64,6 +64,16 @@ impl<'a> From<&'a str> for Parser<'a> {
     }
 }
 
+macro_rules! try_to_parse {
+    ($f:expr, $t:expr) => {
+        match $f.map($t) {
+            Ok(v) => return Ok(v),
+            Err(ParseError::NotPossible) => (),
+            Err(e) => return Err(e),
+        }
+    };
+}
+
 impl<'a> ParsingFunctions for Parser<'a> {
     fn has_next(&self) -> bool {
         self.cursor < self.size
@@ -104,7 +114,7 @@ impl<'a> ParsingFunctions for Parser<'a> {
             }
         };
         if identifier.is_empty() {
-            Err(ParseError::Ident(self.lines))
+            Err(ParseError::NotPossible)
         } else {
             Ok(identifier)
         }
@@ -130,20 +140,26 @@ impl<'a> ParsingFunctions for Parser<'a> {
                     break out;
                 }
             }
-        }
-        .parse::<usize>();
-        if num.is_err() {
-            Err(ParseError::Int(self.lines))
+        };
+        if num.is_empty() {
+            Err(ParseError::NotPossible)
         } else {
-            Ok(num.unwrap())
+            if let Ok(num) = num.parse::<usize>() {
+                Ok(num)
+            } else {
+                Err(ParseError::Int(self.cursor))
+            }
         }
     }
 
     fn symbol(&mut self, c: char) -> bool {
         self.skip_whitespace();
         if let Some(m) = self.input.chars().nth(self.cursor) {
-            self.cursor += 1;
-            m == c
+            let is = m == c;
+            if is {
+                self.cursor += 1;
+            }
+            is
         } else {
             false
         }
@@ -165,10 +181,10 @@ impl<'a> ParsingFunctions for Parser<'a> {
         // let _ident = self.ident();
         // let _dur = self.duration()?;
         // dbg!(_main);
-        // while self.has_next() {
-        //     let next = self.next()?;
-        //     println!("{next:?}");
-        // }
+        while self.has_next() {
+            let next = self.next()?;
+            println!("{next:?}");
+        }
         Ok(())
     }
 }
@@ -199,7 +215,7 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 None => break,
-                _ => self.cursor += 1
+                _ => self.cursor += 1,
             }
         }
     }
@@ -214,36 +230,25 @@ impl<'a> Parser<'a> {
         self.force_end()?;
         Ok(numerator / denominator)
     }
-    
-    fn label(&mut self) -> Result<Option<String>, ParseError> {
+
+    fn label(&mut self) -> Result<String, ParseError> {
         if self.symbol('@') {
-            Ok(Some(self.ident()?))
+            let ident = self.ident();
+            match ident {
+                Err(ParseError::NotPossible) => Err(ParseError::Ident(self.lines)),
+                Ok(v) => Ok(v),
+                _ => unreachable!(),
+            }
         } else {
-            Ok(None)
+            Err(ParseError::NotPossible)
         }
     }
 
     pub fn next(&mut self) -> Result<MusicalValues, ParseError> {
-        // if let Ok(label) = self.label() {
-        //     if let Some(label) = label {
-        //         return Ok(MusicalValues::Label(label))
-        //     }
-        // }
-        // if let Ok(duration) = self.duration() {
-        //     return Ok(MusicalValues::Duration(duration));
-        // }
-        let dur = self.duration().map(MusicalValues::Duration);
-        dur
-        // if let Err(e) = duration {
-        //     return Err(e);
-        // } else {
-        //     return Ok(MusicalValues::Duration(duration.unwrap()));
-        // }
-        // if !self.has_next() {
-        //     Err(ParseError::Done)
-        // } else {
-        //     Err(ParseError::Unexpected(self.lines))
-        // }
+        try_to_parse!(self.label(), MusicalValues::Label);
+        try_to_parse!(self.duration(), MusicalValues::Duration);
+        eprint!("{:?}", self.input.chars().nth(self.cursor));
+        Err(ParseError::Unexpected(self.lines))
     }
 }
 
@@ -257,7 +262,8 @@ fn main() -> Result<(), ParseError> {
     // } else {
     //     println!("{:?}", parsed.unwrap());
     // }
-    println!("{:?}", parser.next());
-    println!("{:?}", parser.next());
+    // println!("{:?}", parser.next());
+    // println!("{:?}", parser.next());
+    parser.parse()?;
     Ok(())
 }
