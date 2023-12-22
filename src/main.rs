@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 #[derive(Debug, PartialEq)]
-pub enum ParseError {
+pub enum ParseResponse {
     Int(usize),
     EOL(usize),
     Ident(usize),
@@ -10,11 +10,11 @@ pub enum ParseError {
     Done,
 }
 
-impl Error for ParseError {}
+impl Error for ParseResponse {}
 
-impl fmt::Display for ParseError {
+impl fmt::Display for ParseResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        type E = ParseError;
+        type E = ParseResponse;
         match self {
             E::Int(l) => write!(f, "Line {l}: Expected an unsigned number"),
             E::EOL(l) => write!(f, "Line {l}: Expected end of line"),
@@ -27,9 +27,35 @@ impl fmt::Display for ParseError {
 }
 
 #[derive(Debug)]
+pub enum NoteModifier {
+    Flat,
+    Sharp,
+    None,
+}
+
+#[derive(Debug)]
+pub enum NoteName {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+}
+
+#[derive(Debug)]
+pub struct Note {
+    pub note: NoteName,
+    pub modifier: NoteModifier,
+    pub duration: f32,
+}
+
+#[derive(Debug)]
 pub enum MusicalValues {
     Label(String),
     Duration(f32),
+    Note(Note),
 }
 
 pub struct Parser<'a> {
@@ -42,11 +68,11 @@ pub struct Parser<'a> {
 pub trait ParsingFunctions {
     fn has_next(&self) -> bool;
     fn skip_whitespace(&mut self);
-    fn ident(&mut self) -> Result<String, ParseError>;
-    fn unsigned_int(&mut self) -> Result<usize, ParseError>;
+    fn ident(&mut self) -> Result<String, ParseResponse>;
+    fn unsigned_int(&mut self) -> Result<usize, ParseResponse>;
     fn symbol(&mut self, c: char) -> bool;
-    fn force_end(&mut self) -> Result<(), ParseError>;
-    fn parse(&mut self) -> Result<(), ParseError>;
+    fn force_end(&mut self) -> Result<(), ParseResponse>;
+    fn parse(&mut self) -> Result<(), ParseResponse>;
 }
 
 impl<'a> From<&'a str> for Parser<'a> {
@@ -68,7 +94,7 @@ macro_rules! try_to_parse {
     ($f:expr, $t:expr) => {
         match $f.map($t) {
             Ok(v) => return Ok(v),
-            Err(ParseError::NotPossible) => (),
+            Err(ParseResponse::NotPossible) => (),
             Err(e) => return Err(e),
         }
     };
@@ -94,7 +120,7 @@ impl<'a> ParsingFunctions for Parser<'a> {
         }
     }
 
-    fn ident(&mut self) -> Result<String, ParseError> {
+    fn ident(&mut self) -> Result<String, ParseResponse> {
         self.skip_whitespace();
         let mut out = "".to_string();
         let identifier = loop {
@@ -114,13 +140,13 @@ impl<'a> ParsingFunctions for Parser<'a> {
             }
         };
         if identifier.is_empty() {
-            Err(ParseError::NotPossible)
+            Err(ParseResponse::NotPossible)
         } else {
             Ok(identifier)
         }
     }
 
-    fn unsigned_int(&mut self) -> Result<usize, ParseError> {
+    fn unsigned_int(&mut self) -> Result<usize, ParseResponse> {
         self.skip_whitespace();
         let mut out = "".to_string();
         let num = loop {
@@ -142,12 +168,12 @@ impl<'a> ParsingFunctions for Parser<'a> {
             }
         };
         if num.is_empty() {
-            Err(ParseError::NotPossible)
+            Err(ParseResponse::NotPossible)
         } else {
             if let Ok(num) = num.parse::<usize>() {
                 Ok(num)
             } else {
-                Err(ParseError::Int(self.cursor))
+                Err(ParseResponse::Int(self.cursor))
             }
         }
     }
@@ -165,18 +191,18 @@ impl<'a> ParsingFunctions for Parser<'a> {
         }
     }
 
-    fn force_end(&mut self) -> Result<(), ParseError> {
+    fn force_end(&mut self) -> Result<(), ParseResponse> {
         self.skip_whitespace();
         if let Some(c) = self.input.bytes().nth(self.cursor) {
             if c != b'\n' && c != b';' {
-                return Err(ParseError::EOL(self.lines));
+                return Err(ParseResponse::EOL(self.lines));
             }
         }
         self.cursor += 1;
         Ok(())
     }
 
-    fn parse(&mut self) -> Result<(), ParseError> {
+    fn parse(&mut self) -> Result<(), ParseResponse> {
         // let _main = self.label();
         // let _ident = self.ident();
         // let _dur = self.duration()?;
@@ -220,7 +246,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn duration(&mut self) -> Result<f32, ParseError> {
+    fn duration(&mut self) -> Result<f32, ParseResponse> {
         let numerator = self.unsigned_int()? as f32;
         let denominator = if self.symbol('/') {
             self.unsigned_int()?
@@ -231,28 +257,70 @@ impl<'a> Parser<'a> {
         Ok(numerator / denominator)
     }
 
-    fn label(&mut self) -> Result<String, ParseError> {
+    fn label(&mut self) -> Result<String, ParseResponse> {
         if self.symbol('@') {
             let ident = self.ident();
             match ident {
-                Err(ParseError::NotPossible) => Err(ParseError::Ident(self.lines)),
+                Err(ParseResponse::NotPossible) => Err(ParseResponse::Ident(self.lines)),
                 Ok(v) => Ok(v),
                 _ => unreachable!(),
             }
         } else {
-            Err(ParseError::NotPossible)
+            Err(ParseResponse::NotPossible)
         }
     }
 
-    pub fn next(&mut self) -> Result<MusicalValues, ParseError> {
+    fn note(&mut self) -> Result<Note, ParseResponse> {
+        let note = if self.symbol('A') {
+            NoteName::A
+        } else if self.symbol('B') || self.symbol('H') {
+            NoteName::B
+        } else if self.symbol('C') {
+            NoteName::C
+        } else {
+            return Err(ParseResponse::NotPossible);
+        };
+        // self.skip_whitespace();
+        // let note = match self.input.chars().nth(self.cursor) {
+        //     Some('A') => Ok(NoteName::A),
+        //     Some('B' | 'H') => Ok(NoteName::B),
+        //     Some('C') => Ok(NoteName::C),
+        //     Some('D') => Ok(NoteName::D),
+        //     Some('E') => Ok(NoteName::E),
+        //     Some('F') => Ok(NoteName::F),
+        //     Some('G') => Ok(NoteName::G),
+        //     _ => Err(ParseError::NotPossible),
+        // }?;
+        let modifier = if self.symbol('#') {
+            NoteModifier::Sharp
+        } else if self.symbol('b') {
+            NoteModifier::Flat
+        } else {
+            NoteModifier::None
+        };
+        let duration = match self.duration() {
+            Ok(v) => Ok(v),
+            Err(ParseResponse::NotPossible) => Err(ParseResponse::Int(self.lines)),
+            Err(e) => Err(e),
+        }?;
+        Ok(Note {
+            note,
+            modifier,
+            duration: duration,
+        })
+    }
+
+    pub fn next(&mut self) -> Result<MusicalValues, ParseResponse> {
+        // println!("{:?}", self.note());
         try_to_parse!(self.label(), MusicalValues::Label);
         try_to_parse!(self.duration(), MusicalValues::Duration);
-        eprint!("{:?}", self.input.chars().nth(self.cursor));
-        Err(ParseError::Unexpected(self.lines))
+        try_to_parse!(self.note(), MusicalValues::Note);
+        // eprint!("{:?}", self.input.chars().nth(self.cursor));
+        Err(ParseResponse::Unexpected(self.lines))
     }
 }
 
-fn main() -> Result<(), ParseError> {
+fn main() -> Result<(), ParseResponse> {
     let mut parser = Parser::from(include_str!("../test.musical"));
     // let parsed = parser.parse();
     // if let Err(e) = parsed {
