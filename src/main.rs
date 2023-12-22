@@ -48,6 +48,11 @@ pub enum NoteName {
 pub struct Note {
     pub note: NoteName,
     pub modifier: NoteModifier,
+}
+
+#[derive(Debug)]
+pub struct Chord {
+    pub notes: Vec<Note>,
     pub duration: f32,
 }
 
@@ -56,6 +61,7 @@ pub enum MusicalValues {
     Label(String),
     Duration(f32),
     Note(Note),
+    Chord(Chord),
 }
 
 pub struct Parser<'a> {
@@ -108,7 +114,7 @@ impl<'a> ParsingFunctions for Parser<'a> {
     fn skip_whitespace(&mut self) {
         while self.has_next() {
             match self.input.chars().nth(self.cursor) {
-                Some(' ' | '\t' | '\r') => self.cursor += 1,
+                Some(' ' | '\t' | '\r' | ';') => self.cursor += 1,
                 Some('\n') => {
                     self.cursor += 1;
                     self.lines += 1;
@@ -253,7 +259,6 @@ impl<'a> Parser<'a> {
         } else {
             1
         } as f32;
-        self.force_end()?;
         Ok(numerator / denominator)
     }
 
@@ -270,53 +275,76 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn note(&mut self) -> Result<Note, ParseResponse> {
+    fn get_note(&mut self) -> Result<Note, ParseResponse> {
         let note = if self.symbol('A') {
             NoteName::A
         } else if self.symbol('B') || self.symbol('H') {
             NoteName::B
         } else if self.symbol('C') {
             NoteName::C
+        } else if self.symbol('D') {
+            NoteName::D
+        } else if self.symbol('E') {
+            NoteName::E
+        } else if self.symbol('F') {
+            NoteName::F
+        } else if self.symbol('G') {
+            NoteName::G
         } else {
             return Err(ParseResponse::NotPossible);
         };
-        // self.skip_whitespace();
-        // let note = match self.input.chars().nth(self.cursor) {
-        //     Some('A') => Ok(NoteName::A),
-        //     Some('B' | 'H') => Ok(NoteName::B),
-        //     Some('C') => Ok(NoteName::C),
-        //     Some('D') => Ok(NoteName::D),
-        //     Some('E') => Ok(NoteName::E),
-        //     Some('F') => Ok(NoteName::F),
-        //     Some('G') => Ok(NoteName::G),
-        //     _ => Err(ParseError::NotPossible),
-        // }?;
-        let modifier = if self.symbol('#') {
-            NoteModifier::Sharp
-        } else if self.symbol('b') {
-            NoteModifier::Flat
-        } else {
-            NoteModifier::None
+
+        let modifier = match self.input.chars().nth(self.cursor) {
+            Some(c) => match c {
+                '#' => {
+                    self.cursor += 1;
+                    NoteModifier::Sharp
+                }
+                'b' => {
+                    self.cursor += 1;
+                    NoteModifier::Flat
+                }
+                _ => {
+                    self.skip_whitespace();
+                    NoteModifier::None
+                }
+            },
+            None => return Err(ParseResponse::NotPossible),
         };
-        let duration = match self.duration() {
-            Ok(v) => Ok(v),
-            Err(ParseResponse::NotPossible) => Err(ParseResponse::Int(self.lines)),
-            Err(e) => Err(e),
-        }?;
         Ok(Note {
             note,
             modifier,
-            duration: duration,
+        })
+    }
+
+    fn chord(&mut self) -> Result<Chord, ParseResponse> {
+        let mut notes: Vec<Note> = vec![];
+        loop {
+            let note = self.get_note();
+            if note.is_err() {
+                break;
+            }
+            notes.push(note.unwrap());
+        };
+        if notes.is_empty() {
+            return Err(ParseResponse::NotPossible);
+        }
+        let duration = self.duration()?;
+        Ok(Chord {
+            notes,
+            duration,
         })
     }
 
     pub fn next(&mut self) -> Result<MusicalValues, ParseResponse> {
-        // println!("{:?}", self.note());
         try_to_parse!(self.label(), MusicalValues::Label);
-        try_to_parse!(self.duration(), MusicalValues::Duration);
-        try_to_parse!(self.note(), MusicalValues::Note);
-        // eprint!("{:?}", self.input.chars().nth(self.cursor));
-        Err(ParseResponse::Unexpected(self.lines))
+        try_to_parse!(self.chord(), MusicalValues::Chord);
+        self.skip_whitespace();
+        if !self.has_next() {
+            Err(ParseResponse::Done)
+        } else {
+            Err(ParseResponse::Unexpected(self.lines))
+        }
     }
 }
 
