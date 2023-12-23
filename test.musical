@@ -1,6 +1,5 @@
 #!/usr/bin/env musical
-< This is a multi-
-    line comment
->
+bpm:60
 @main
-B#AbC3/2C2
+B# Ab C 3/2
+C 2

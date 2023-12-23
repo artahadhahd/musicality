@@ -56,12 +56,25 @@ pub struct Chord {
     pub duration: f32,
 }
 
+impl Chord {
+    pub fn is_note(&self) -> bool {
+        self.notes.len() == 1
+    }
+}
+
+#[derive(Debug)]
+pub struct Variable {
+    pub name: String,
+    pub value: f32,
+}
+
 #[derive(Debug)]
 pub enum MusicalValues {
     Label(String),
     Duration(f32),
     Note(Note),
     Chord(Chord),
+    Var(Variable),
 }
 
 pub struct Parser<'a> {
@@ -252,6 +265,18 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn variable(&mut self) -> Result<Variable, ParseResponse> {
+        let name = self.ident()?;
+        if !self.symbol(':') {
+            return Err(ParseResponse::NotPossible);
+        }
+        let value = self.duration()?;
+        Ok(Variable {
+            name,
+            value,
+        })
+    }
+
     fn duration(&mut self) -> Result<f32, ParseResponse> {
         let numerator = self.unsigned_int()? as f32;
         let denominator = if self.symbol('/') {
@@ -339,6 +364,7 @@ impl<'a> Parser<'a> {
     pub fn next(&mut self) -> Result<MusicalValues, ParseResponse> {
         try_to_parse!(self.label(), MusicalValues::Label);
         try_to_parse!(self.chord(), MusicalValues::Chord);
+        try_to_parse!(self.variable(), MusicalValues::Var);
         self.skip_whitespace();
         if !self.has_next() {
             Err(ParseResponse::Done)
