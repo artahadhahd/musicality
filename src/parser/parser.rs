@@ -1,74 +1,5 @@
-use std::{error::Error, fmt};
-
-#[derive(Debug, PartialEq)]
-pub enum ParseResponse {
-    Int(usize),
-    EOL(usize),
-    Ident(usize),
-    Unexpected(usize),
-    NotPossible,
-    Done,
-}
-
-impl Error for ParseResponse {}
-
-impl fmt::Display for ParseResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        type E = ParseResponse;
-        match self {
-            E::Int(l) => write!(f, "Line {l}: Expected an unsigned number"),
-            E::EOL(l) => write!(f, "Line {l}: Expected end of line"),
-            E::Ident(l) => write!(f, "Line {l}: Expected an identifier"),
-            E::Unexpected(l) => write!(f, "Line {l}: Unexpected character(s)"),
-            E::Done => write!(f, ""),
-            E::NotPossible => unreachable!(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum NoteModifier {
-    Flat,
-    Sharp,
-    None,
-}
-
-#[derive(Debug)]
-pub enum NoteName {
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-}
-
-#[derive(Debug)]
-pub struct Note {
-    pub note: NoteName,
-    pub modifier: NoteModifier,
-}
-
-#[derive(Debug)]
-pub struct Chord {
-    pub notes: Vec<Note>,
-    pub duration: f32,
-}
-
-impl Chord {
-    #[allow(dead_code)]
-    pub fn is_note(&self) -> bool {
-        self.notes.len() == 1
-    }
-}
-
-#[derive(Debug)]
-pub struct Variable {
-    pub name: String,
-    pub value: f32,
-}
-
+use crate::parser::data::{Chord, Note, NoteModifier, NoteName, Variable};
+use crate::parser::error::ParseResponse;
 #[derive(Debug)]
 pub enum MusicalValues {
     Label(String),
@@ -88,7 +19,6 @@ pub trait ParsingFunctions {
     fn skip_whitespace(&mut self);
     fn ident(&mut self) -> Result<String, ParseResponse>;
     fn unsigned_int(&mut self) -> Result<usize, ParseResponse>;
-    // fn float(&mut self) -> Result<f32, ParseResponse>;
     fn symbol(&mut self, c: char) -> bool;
     fn force_end(&mut self) -> Result<(), ParseResponse>;
     fn parse(&mut self) -> Result<(), ParseResponse>;
@@ -267,10 +197,7 @@ impl<'a> Parser<'a> {
             return Err(ParseResponse::NotPossible);
         }
         let value = self.unsigned_int()? as f32;
-        Ok(Variable {
-            name,
-            value,
-        })
+        Ok(Variable { name, value })
     }
 
     fn duration(&mut self) -> Result<f32, ParseResponse> {
@@ -332,10 +259,7 @@ impl<'a> Parser<'a> {
             },
             None => return Err(ParseResponse::NotPossible),
         };
-        Ok(Note {
-            note,
-            modifier,
-        })
+        Ok(Note { note, modifier })
     }
 
     fn chord(&mut self) -> Result<Chord, ParseResponse> {
@@ -346,15 +270,12 @@ impl<'a> Parser<'a> {
                 break;
             }
             notes.push(note.unwrap());
-        };
+        }
         if notes.is_empty() {
             return Err(ParseResponse::NotPossible);
         }
         let duration = self.duration()?;
-        Ok(Chord {
-            notes,
-            duration,
-        })
+        Ok(Chord { notes, duration })
     }
 
     pub fn next(&mut self) -> Result<MusicalValues, ParseResponse> {
