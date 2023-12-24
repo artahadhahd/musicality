@@ -5,6 +5,7 @@ pub enum MusicalValues {
     Label(String),
     Chord(Chord),
     Var(Variable),
+    Pair((String, String)),
 }
 
 pub struct Parser<'a> {
@@ -210,6 +211,19 @@ impl<'a> Parser<'a> {
         Ok(numerator / denominator)
     }
 
+    fn pair(&mut self) -> Result<(String, String), ParseResponse> {
+        let fst = self.ident()?;
+        let snd = self.ident()?;
+        // dbg!(&snd);// &snd);
+        // if let Ok(snd) = snd {
+        //     if let Ok(fst) = fst {
+        //         return Ok((fst, snd));
+        //     }
+        // }
+        Ok((fst, snd))
+        // Err(ParseResponse::NotPossible)
+    }
+
     fn label(&mut self) -> Result<String, ParseResponse> {
         if self.symbol('@') {
             let ident = self.ident();
@@ -281,12 +295,59 @@ impl<'a> Parser<'a> {
     pub fn next(&mut self) -> Result<MusicalValues, ParseResponse> {
         try_to_parse!(self.label(), MusicalValues::Label);
         try_to_parse!(self.chord(), MusicalValues::Chord);
+        let old = self.cursor;
+        // try_to_parse!(self.pair(), MusicalValues::Pair);
+        match self.pair().map(MusicalValues::Pair) {
+            Ok(v) => return Ok(v),
+            Err(ParseResponse::NotPossible) => self.cursor = old,
+            Err(e) => return Err(e),
+        }
         try_to_parse!(self.variable(), MusicalValues::Var);
         self.skip_whitespace();
         if !self.has_next() {
             Err(ParseResponse::Done)
         } else {
+            println!("{:?}", self.input.chars().nth(self.cursor));
             Err(ParseResponse::Unexpected(self.lines))
         }
+    }
+
+    pub fn get_err_line(&self) -> String {
+        let start = {
+            let mut cursor = self.cursor;
+            while cursor > 0 {
+                if let Some(c) = self.input.bytes().nth(cursor) {
+                    if c == b'\n' {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+                cursor -= 1;
+            }
+            cursor
+        };
+        let end = {
+            let mut cursor = self.cursor;
+            while self.has_next() {
+                if let Some(c) = self.input.bytes().nth(cursor) {
+                    if c == b'\n' {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+                cursor += 1;
+            }
+            cursor
+        };
+        let lines = {
+            let mut out = "".to_string();
+            for i in start..end {
+                out.push(self.input.chars().nth(i).unwrap());
+            }
+            out
+        };
+        lines
     }
 }
