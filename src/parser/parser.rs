@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::parser::data::{Chord, Note, NoteModifier, NoteName, Variable};
 use crate::parser::error::ParseResponse;
 #[derive(Debug)]
@@ -6,6 +8,17 @@ pub enum MusicalValues {
     Chord(Chord),
     Var(Variable),
     Pair((String, String)),
+}
+
+impl fmt::Display for MusicalValues {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Label(s) => write!(f, "@{s}"),
+            Self::Pair(p) => write!(f, "pair '{} {}'", p.0, p.1),
+            Self::Chord(_) => write!(f, "<chord>"),
+            Self::Var(v) => write!(f, "{} = {}", v.name, v.value),
+        }
+    }
 }
 
 pub struct Parser<'a> {
@@ -214,14 +227,7 @@ impl<'a> Parser<'a> {
     fn pair(&mut self) -> Result<(String, String), ParseResponse> {
         let fst = self.ident()?;
         let snd = self.ident()?;
-        // dbg!(&snd);// &snd);
-        // if let Ok(snd) = snd {
-        //     if let Ok(fst) = fst {
-        //         return Ok((fst, snd));
-        //     }
-        // }
         Ok((fst, snd))
-        // Err(ParseResponse::NotPossible)
     }
 
     fn label(&mut self) -> Result<String, ParseResponse> {
