@@ -1,40 +1,70 @@
 mod parser;
+use audio::AudioDevice;
 use parser::{
+    data::Chord,
     error::ParseResponse,
     parser::{MusicalValues, Parser, ParsingFunctions},
 };
 use std::error::Error;
 use std::{collections::HashMap, fmt::Display, fs, process::exit};
 
+mod audio;
+
+fn play(chord: &Chord, _base: f32, _octave: f32) {
+    for _note in chord.notes.iter() {
+        // println!("playing note {note:?}, base = {base}, octave = {octave}");
+    }
+}
+
 pub struct Compiler {
     pub ast: Vec<MusicalValues>,
     variables: VariableType,
     cursor: usize,
     function_pointer: HashMap<String, usize>,
+    audio_device: Option<AudioDevice>,
 }
 
 #[derive(Debug)]
 pub struct VariableType {
     pub global: HashMap<String, f32>,   // modified once
-    pub scoped: HashMap<String, usize>, // cleared once entering a scope.
+    pub scoped: HashMap<String, f32>, // cleared once entering a scope.
 }
 
 impl VariableType {
     pub fn new() -> Self {
         let global = HashMap::new();
-        // global.insert(&"bpm".to_string(), 60f32);
-        // global.insert(&"pitch".to_string(), 440f32);
-        Self {
-            global,
-            scoped: HashMap::new(),
+        let scoped = HashMap::new();
+        Self { global, scoped }
+    }
+
+    pub fn get_global(&self, var: &str) -> Result<f32, CompilerError> {
+        if let Some(var) = self.global.get(var) {
+            Ok(*var)
+        } else {
+            Err(CompilerError::GlobalPropertyMissing(var.into()))
         }
     }
 }
 
 impl<'a> Compiler {
     pub fn new(input: &'a str) -> Result<Self, CompilerError> {
+        let audio_device = if AudioDevice::supports() {
+            if cfg!(debug_assertions) {
+                AudioDevice::enable_debug_mode();
+            }
+            let dev = AudioDevice::new();
+            if let Err(e) = dev {
+                eprintln!("{e}");
+                None
+            } else {
+                Some(dev.unwrap())
+            }
+        } else {
+            None
+        };
+
         let mut parser = Parser::from(input);
-        let mut ast: Vec<MusicalValues> = vec![];
+        let mut ast = Vec::new();
         let mut has_failed = false;
         let mut function_pointer = HashMap::new();
         let mut p = 0;
@@ -80,6 +110,7 @@ impl<'a> Compiler {
             variables,
             cursor: 0,
             function_pointer,
+            audio_device,
         })
     }
 
@@ -116,10 +147,15 @@ impl<'a> Compiler {
         match (pair.0.to_lowercase().as_str(), pair.1) {
             ("goto", label) => {
                 if let Some(pointer) = self.function_pointer.get(&label) {
-                    let prev = self.cursor;
-                    self.cursor = pointer + 1 as usize;
+                    // self.variables.scoped.clear();
+                    let last_scope_vars = self.variables.scoped.clone();
+                    self.variables.scoped.clear();
+                    let prevcursor = self.cursor;
+                    self.cursor = *pointer;
+                    self.try_increase_cursor();
                     self.run_body()?;
-                    self.cursor = prev;
+                    self.cursor = prevcursor;
+                    self.variables.scoped = last_scope_vars;
                 } else {
                     eprintln!("Warning: ignoring 'goto {label}': label doesn't exist");
                 }
@@ -127,7 +163,7 @@ impl<'a> Compiler {
             }
             ("inc", var) => {
                 if let Some(val) = self.variables.scoped.get(&var) {
-                    self.variables.scoped.insert(var, val + 1);
+                    self.variables.scoped.insert(var, val + 1f32);
                 } else if let Some(val) = self.variables.global.get(&var) {
                     self.variables.global.insert(var, *val + 1f32);
                 } else {
@@ -137,7 +173,7 @@ impl<'a> Compiler {
             }
             ("dec", var) => {
                 if let Some(val) = self.variables.scoped.get(&var) {
-                    self.variables.scoped.insert(var, val - 1);
+                    self.variables.scoped.insert(var, val - 1f32);
                 } else if let Some(val) = self.variables.global.get(&var) {
                     self.variables.global.insert(var, *val - 1f32);
                 } else {
@@ -162,16 +198,22 @@ impl<'a> Compiler {
     fn run_body(&mut self) -> Result<(), CompilerError> {
         match &self.ast[self.cursor] {
             MusicalValues::Label(_) => {
-                // self.try_increase_cursor();
                 return Ok(());
             }
             MusicalValues::Pair(p) => self.interpret_pair(p.clone())?,
-            MusicalValues::Chord(c) => println!("{c:?}"),
-            _ => todo!(),
+            MusicalValues::Chord(chord) => {
+                let base_pitch = self.variables.get_global("pitch")?;
+                let octave = self.variables.get_global("octave")?;
+                play(chord, base_pitch, octave);
+            }
+            MusicalValues::Var(v) => {
+                self.variables.scoped.insert(v.name.clone(), v.value);
+            }
         }
         if !self.try_increase_cursor() {
             return Ok(());
         }
+        // dbg!(&self.variables);
         self.run_body()
     }
 
@@ -194,16 +236,20 @@ pub enum CompilerError {
     Failed,
     NoMain,
     NoFunc(String),
+    GlobalPropertyMissing(String),
 }
 
 impl Error for CompilerError {}
 
-impl<'a> Display for CompilerError {
+impl Display for CompilerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Failed => write!(f, "Failed to compile due to previous parsing error"),
             Self::NoMain => write!(f, "File contains no main function"),
             Self::NoFunc(s) => write!(f, "function '{s}' doesn't exist"),
+            Self::GlobalPropertyMissing(s) => {
+                write!(f, "Global property '{s}' is missing, but is required")
+            }
         }
     }
 }
@@ -217,7 +263,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let mut compiler = compiler.unwrap();
     if let Err(e) = compiler.run() {
-        eprintln!("{e}");
+        eprintln!("Error: {e}");
     }
     Ok(())
 }

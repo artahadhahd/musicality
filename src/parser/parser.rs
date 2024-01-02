@@ -30,6 +30,7 @@ pub struct Parser<'a> {
 
 pub trait ParsingFunctions {
     fn has_next(&self) -> bool;
+    fn next(&mut self) -> Result<MusicalValues, ParseResponse>;
     fn skip_whitespace(&mut self);
     fn ident(&mut self) -> Result<String, ParseResponse>;
     fn unsigned_int(&mut self) -> Result<usize, ParseResponse>;
@@ -172,6 +173,26 @@ impl<'a> ParsingFunctions for Parser<'a> {
         }
         Ok(())
     }
+
+    fn next(&mut self) -> Result<MusicalValues, ParseResponse> {
+        try_to_parse!(self.label(), MusicalValues::Label);
+        try_to_parse!(self.chord(), MusicalValues::Chord);
+        let old = self.cursor;
+        // try_to_parse!(self.pair(), MusicalValues::Pair);
+        match self.pair().map(MusicalValues::Pair) {
+            Ok(v) => return Ok(v),
+            Err(ParseResponse::NotPossible) => self.cursor = old,
+            Err(e) => return Err(e),
+        }
+        try_to_parse!(self.variable(), MusicalValues::Var);
+        self.skip_whitespace();
+        if !self.has_next() {
+            Err(ParseResponse::Done)
+        } else {
+            println!("{:?}", self.input.chars().nth(self.cursor));
+            Err(ParseResponse::Unexpected(self.lines))
+        }
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -296,26 +317,6 @@ impl<'a> Parser<'a> {
         }
         let duration = self.duration()?;
         Ok(Chord { notes, duration })
-    }
-
-    pub fn next(&mut self) -> Result<MusicalValues, ParseResponse> {
-        try_to_parse!(self.label(), MusicalValues::Label);
-        try_to_parse!(self.chord(), MusicalValues::Chord);
-        let old = self.cursor;
-        // try_to_parse!(self.pair(), MusicalValues::Pair);
-        match self.pair().map(MusicalValues::Pair) {
-            Ok(v) => return Ok(v),
-            Err(ParseResponse::NotPossible) => self.cursor = old,
-            Err(e) => return Err(e),
-        }
-        try_to_parse!(self.variable(), MusicalValues::Var);
-        self.skip_whitespace();
-        if !self.has_next() {
-            Err(ParseResponse::Done)
-        } else {
-            println!("{:?}", self.input.chars().nth(self.cursor));
-            Err(ParseResponse::Unexpected(self.lines))
-        }
     }
 
     pub fn get_err_line(&self) -> String {

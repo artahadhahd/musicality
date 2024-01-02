@@ -1,14 +1,13 @@
 #[derive(Debug)]
-pub enum NoteModifier {
-    Flat,
-    Sharp,
-    None,
-}
+#[rustfmt::skip]
+pub enum NoteModifier { Flat, Sharp, None }
 
 #[derive(Debug)]
 #[rustfmt::skip]
-pub enum NoteName {
-    A, B, C, D, E, F, G,
+pub enum NoteName { A, B, C, D, E, F, G }
+
+impl NoteName {
+    pub fn get_freq(&self, base: &f32) {}
 }
 
 #[derive(Debug)]
